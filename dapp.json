@@ -9,6 +9,12 @@
       "expectSelector": ".chore-card",
       "visual": true,
       "impact": ["public/index.html", "server.js"]
+    },
+    {
+      "id": "rota.bin-reminder",
+      "name": "Bin reminder banner element is present",
+      "path": "/",
+      "expectSelector": "#bin-reminder"
     }
   ]
 }
