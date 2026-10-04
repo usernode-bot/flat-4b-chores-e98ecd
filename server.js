@@ -137,29 +137,65 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // fresh load.
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
-// Button press
-app.post('/api/press', async (req, res) => {
+// Chores
+//
+// The week starts on Monday (the "rotates every Monday" note), so a chore's
+// done state and its current person are both computed against the Monday of
+// the current UTC week, not the wall clock: done means "ticked this week",
+// and everyone's turn moves on one person each Monday.
+function mondayOf(date) {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+// The Monday of the week this first version ships: the week rotation index 0
+// refers to, so each chore starts on the person the sketch names.
+const ROTATION_ANCHOR = '2026-09-28';
+
+// One chore as the API returns it, for the week containing `week`.
+function choreView(row, week) {
+  const weeks = Math.round((Date.parse(week) - Date.parse(ROTATION_ANCHOR)) / 604800000);
+  const len = row.people.length;
+  return {
+    id: row.id,
+    name: row.name,
+    person: row.people[((weeks % len) + len) % len],
+    dueDay: row.due_day,
+    done: row.done_week === week,
+  };
+}
+
+app.get('/api/chores', async (_req, res) => {
   try {
-    await pool.query(`
-      INSERT INTO presses (user_id, username) VALUES ($1, $2)
-    `, [req.user.id, req.user.username]);
-    res.json({ ok: true });
+    const week = mondayOf(new Date());
+    const { rows } = await pool.query(`
+      SELECT id, name, people, due_day, last_done_week::text AS done_week
+      FROM chores
+      ORDER BY id
+    `);
+    res.json({ week, chores: rows.map(row => choreView(row, week)) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Leaderboard
-app.get('/api/leaderboard', async (_req, res) => {
+// Mark a chore done for the current week. Guests are already answered 401
+// `account_required` by the middleware above. Idempotent: ticking an already
+// ticked chore just rewrites the same week.
+app.post('/api/chores/:id/done', async (req, res) => {
   try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'not_found' });
+    const week = mondayOf(new Date());
     const { rows } = await pool.query(`
-      SELECT username, COUNT(*) as presses
-      FROM presses
-      GROUP BY username
-      ORDER BY presses DESC
-      LIMIT 50
-    `);
-    res.json({ leaderboard: rows });
+      UPDATE chores
+      SET last_done_week = $1
+      WHERE id = $2
+      RETURNING id, name, people, due_day, last_done_week::text AS done_week
+    `, [week, id]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    res.json({ ok: true, chore: choreView(rows[0], week) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -204,12 +240,26 @@ app.get('*', (req, res) => {
 
 async function start() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS presses (
+    CREATE TABLE IF NOT EXISTS chores (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      username VARCHAR(255) NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      name VARCHAR(255) NOT NULL,
+      people TEXT[] NOT NULL,
+      due_day VARCHAR(20) NOT NULL,
+      last_done_week DATE
     )
+  `);
+  // Seed the flat's three chores once, only while the table is empty. The
+  // rotation order is Maya → Jasper → Sophie, each chore offset by one so the
+  // person the sketch names starts first.
+  await pool.query(`
+    INSERT INTO chores (name, people, due_day)
+    SELECT v.name, v.people, v.due_day
+    FROM (VALUES
+      ('bins', ARRAY['Maya','Jasper','Sophie']::text[], 'Friday'),
+      ('dishes', ARRAY['Jasper','Sophie','Maya']::text[], 'Thursday'),
+      ('hoovering', ARRAY['Sophie','Maya','Jasper']::text[], 'Saturday')
+    ) AS v(name, people, due_day)
+    WHERE NOT EXISTS (SELECT 1 FROM chores)
   `);
   const server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.

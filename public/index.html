@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
+
   <script>
   // usernode-dev-console@1
   (function () {
@@ -108,170 +108,174 @@
   </script>
 </head>
 <body class="min-h-screen bg-ground text-fg">
-  <!-- Built from the design kit in styles/tailwind-input.css: colour tokens
-       (bg-ground, text-muted, bg-accent, ...) that are right in both looks,
-       and components (btn-primary, list, card, state-empty, ...). The real
-       app keeps the kit; CLAUDE.md's "## Design" says how. -->
   <main class="mx-auto flex max-w-md flex-col gap-8 px-4 py-10">
 
-    <!-- usernode-starter-notice@1 — starter-template messaging. When building
-         the user's real app, replace this whole screen and delete this block,
-         both sentinel comments included. -->
-    <div class="flex flex-col items-start gap-2">
-      <p class="rounded-full bg-raised px-3 py-1 text-small font-medium text-muted">A sketch of Flat 4B Chores</p>
-      <p class="text-small text-muted">Homeroom sketched this from the app's description. Nothing on it works yet: to build it, ask Homeroom bot (tap the <strong class="font-semibold text-fg">Homeroom icon</strong>, then <strong class="font-semibold text-fg">Ask for a change</strong>).</p>
-    </div>
     <header class="px-4 py-6 bg-surface">
-  <h1 class="text-title font-bold text-fg">Flat 4B Chores</h1>
-  <p class="text-muted text-small">week of Monday 20 Jan</p>
-</header>
+      <h1 class="text-title font-bold text-fg">Flat 4B Chores</h1>
+      <!-- Filled in from GET /api/chores once the week is known. -->
+      <p id="week" class="text-muted text-small"></p>
+    </header>
 
-<section class="px-4 py-6 flex flex-col gap-3">
-  <div class="card bg-raised border border-line rounded-lg p-4">
-    <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <h2 class="text-heading font-semibold text-fg">bins</h2>
-        <p class="text-body text-accent font-medium">Maya's turn</p>
-      </div>
-      <button class="btn-primary shrink-0">mark as done</button>
-    </div>
-    <p class="text-small text-muted">due Friday</p>
-  </div>
+    <section class="px-4 flex flex-col gap-3">
+      <!-- What happened after a tap: "bins marked as done", or why a tick
+           didn't save. Always in the layout (min-h-6) so nothing jumps. -->
+      <p id="status" class="min-h-6 text-body font-medium" role="status"></p>
 
-  <div class="card bg-raised border border-line rounded-lg p-4">
-    <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <h2 class="text-heading font-semibold text-fg">dishes</h2>
-        <p class="text-body text-accent font-medium">Jasper's turn</p>
-      </div>
-      <button class="btn-secondary shrink-0">mark as done</button>
-    </div>
-    <p class="text-small text-muted">due Thursday</p>
-  </div>
-
-  <div class="card bg-raised border border-line rounded-lg p-4">
-    <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <h2 class="text-heading font-semibold text-fg">hoovering</h2>
-        <p class="text-body text-accent font-medium">Sophie's turn</p>
-      </div>
-      <button class="btn-secondary shrink-0">mark as done</button>
-    </div>
-    <p class="text-small text-muted">due Saturday</p>
-  </div>
-</section>
-
-<section class="px-4 py-4 border-t border-line">
-  <p class="text-small text-muted text-center">rotates every Monday</p>
-</section>
-    <!-- /usernode-starter-notice@1 -->
-
-    <section class="flex flex-col items-center gap-5" hidden>
-      <div class="w-full px-1">
-        <h2 class="text-heading">Try the example</h2>
-        <p class="text-small text-muted">This example will be replaced</p>
-      </div>
-
-      <button id="press-btn" class="btn-primary h-32 w-32 rounded-full text-title active:scale-95">Press!</button>
-
-      <p id="count" class="min-h-6 text-body text-muted"></p>
-
-      <div class="w-full">
-        <h3 class="section-label">Leaderboard</h3>
-        <!-- Anything that loads data shows exactly one of these at a time:
-             loading, the data, empty (it loaded, and there is nothing yet)
-             or error (it did not load). The script below switches them. -->
-        <div id="leaderboard-loading" role="status">
-          <span class="sr-only">Loading the leaderboard</span>
-          <div class="list">
-            <div class="list-row"><div class="skeleton h-4 w-1/2"></div></div>
-            <div class="list-row"><div class="skeleton h-4 w-1/3"></div></div>
-            <div class="list-row"><div class="skeleton h-4 w-2/5"></div></div>
-          </div>
+      <!-- The week's chores, one card per chore. Exactly one of these four
+           states shows at a time: loading, the cards, empty (the load worked
+           and found nothing) or error (it did not load). -->
+      <div id="chores-loading" role="status">
+        <span class="sr-only">Loading the chores</span>
+        <div class="list">
+          <div class="list-row"><div class="skeleton h-4 w-1/2"></div></div>
+          <div class="list-row"><div class="skeleton h-4 w-1/3"></div></div>
+          <div class="list-row"><div class="skeleton h-4 w-2/5"></div></div>
         </div>
-        <ol id="leaderboard" class="list" hidden></ol>
-        <div id="leaderboard-empty" class="state-empty" hidden>
-          <p class="text-heading">No presses yet</p>
-          <p class="text-body text-muted">Press the button to put your name on the board.</p>
-          <button id="leaderboard-press" class="btn-secondary">Press it</button>
-        </div>
-        <div id="leaderboard-error" class="state-error" hidden>
-          <svg class="h-6 w-6 text-danger" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
-          <p class="text-heading">Couldn't load the leaderboard</p>
-          <p class="text-body text-muted">Pressing still works, and every press is saved.</p>
-          <button id="leaderboard-retry" class="btn-secondary">Retry</button>
-        </div>
+      </div>
+      <div id="chores-list" class="flex flex-col gap-3" hidden></div>
+      <div id="chores-empty" class="state-empty" hidden>
+        <p class="text-heading">No chores yet</p>
+        <p class="text-body text-muted">This flat hasn't added any chores.</p>
+      </div>
+      <div id="chores-error" class="state-error" hidden>
+        <svg class="h-6 w-6 text-danger" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+        <p class="text-heading">Couldn't load the chores</p>
+        <p class="text-body text-muted">The rest of the app still works; try again.</p>
+        <button id="chores-retry" class="btn-secondary">Retry</button>
       </div>
     </section>
 
-    <p class="text-center text-small text-muted" hidden>Built on Homeroom. This template screen disappears once you build your real app.</p>
+    <section class="px-4 py-4 border-t border-line">
+      <p class="text-small text-muted text-center">rotates every Monday</p>
+    </section>
   </main>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || '';
+    const token = new URLSearchParams(window.location.search).get('token') || '';
     const headers = token ? { 'x-usernode-token': token } : {};
-    const count = document.getElementById('count');
 
-    // The leaderboard's states, one shown at a time. Empty only when the
-    // load worked and found nothing; a failure is the error state, never
-    // "No presses yet".
+    const weekEl = document.getElementById('week');
+    const statusEl = document.getElementById('status');
     const views = {
-      loading: document.getElementById('leaderboard-loading'),
-      list: document.getElementById('leaderboard'),
-      empty: document.getElementById('leaderboard-empty'),
-      error: document.getElementById('leaderboard-error'),
+      loading: document.getElementById('chores-loading'),
+      list: document.getElementById('chores-list'),
+      empty: document.getElementById('chores-empty'),
+      error: document.getElementById('chores-error'),
     };
     function show(state) {
       for (const [name, el] of Object.entries(views)) el.hidden = name !== state;
     }
 
-    async function loadLeaderboard() {
-      let leaderboard;
+    // The API's week is always a Monday; the sketch's wording does the rest.
+    function formatWeek(week) {
+      const d = new Date(week + 'T00:00:00Z');
+      if (isNaN(d)) return '';
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return 'week of Monday ' + d.getUTCDate() + ' ' + months[d.getUTCMonth()];
+    }
+
+    // The one status line: a confirmation in the accent colour after a tick,
+    // in the danger colour when something didn't work. Clears after a few
+    // seconds, and always keeps its height so the layout doesn't jump.
+    let statusTimer;
+    function showStatus(text, isError) {
+      statusEl.textContent = text;
+      statusEl.className = 'min-h-6 text-body font-medium ' + (isError ? 'text-danger' : 'text-accent');
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(() => { statusEl.textContent = ''; }, 4000);
+    }
+
+    // One chore card, same shape and words as the sketch: name, whose turn,
+    // due day, and either the mark-as-done button or a plain done label.
+    function choreCard(chore, index) {
+      const card = document.createElement('div');
+      card.className = 'card bg-raised border border-line rounded-lg p-4';
+
+      const top = document.createElement('div');
+      top.className = 'flex items-start justify-between mb-3';
+
+      const info = document.createElement('div');
+      info.className = 'min-w-0';
+      const name = document.createElement('h2');
+      name.className = 'text-heading font-semibold text-fg';
+      name.textContent = chore.name;
+      const turn = document.createElement('p');
+      turn.className = 'text-body text-accent font-medium';
+      turn.textContent = chore.person + "'s turn";
+      info.append(name, turn);
+
+      if (chore.done) {
+        const done = document.createElement('p');
+        done.className = 'text-body text-accent font-medium';
+        done.textContent = 'done';
+        top.append(info, done);
+      } else {
+        const button = document.createElement('button');
+        // Whole literals only, so the precompiled Tailwind build sees them.
+        button.className = index === 0 ? 'btn-primary shrink-0' : 'btn-secondary shrink-0';
+        button.textContent = 'mark as done';
+        button.addEventListener('click', () => markDone(chore, button, index));
+        top.append(info, button);
+      }
+
+      const due = document.createElement('p');
+      due.className = 'text-small text-muted';
+      due.textContent = 'due ' + chore.dueDay;
+
+      card.append(top, due);
+      return card;
+    }
+
+    function renderChores() {
+      views.list.replaceChildren(...chores.map((chore, index) => choreCard(chore, index)));
+    }
+
+    async function markDone(chore, button, index) {
+      button.disabled = true;
+      let updated;
       try {
-        const res = await fetch('/api/leaderboard', { headers });
+        const res = await fetch('/api/chores/' + chore.id + '/done', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+        });
+        if (res.status === 401) {
+          button.disabled = false;
+          showStatus('Make an account to continue', true);
+          return;
+        }
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        ({ leaderboard } = await res.json());
+        updated = (await res.json()).chore;
+      } catch {
+        button.disabled = false;
+        showStatus(chore.name + " wasn't marked as done. Try again.", true);
+        return;
+      }
+      chores[index] = updated;
+      views.list.replaceChild(choreCard(updated, index), views.list.children[index]);
+      showStatus(chore.name + ' marked as done', false);
+    }
+
+    let chores = [];
+
+    async function loadChores() {
+      show('loading');
+      let data;
+      try {
+        const res = await fetch('/api/chores', { headers });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        data = await res.json();
       } catch {
         show('error');
         return;
       }
-      // People's names go in as text, never as HTML.
-      views.list.replaceChildren(...leaderboard.map((r, i) => {
-        const row = document.createElement('li');
-        row.className = 'list-row justify-between';
-        const name = document.createElement('span');
-        name.textContent = (i + 1) + '. ' + r.username;
-        const presses = document.createElement('span');
-        presses.className = 'tabular-nums text-muted';
-        presses.textContent = r.presses;
-        row.append(name, presses);
-        return row;
-      }));
-      const total = leaderboard.reduce((s, r) => s + parseInt(r.presses, 10), 0);
-      count.textContent = total + (total === 1 ? ' press so far' : ' presses so far');
-      show(leaderboard.length ? 'list' : 'empty');
+      weekEl.textContent = formatWeek(data.week);
+      chores = data.chores;
+      renderChores();
+      show(chores.length ? 'list' : 'empty');
     }
 
-    async function press() {
-      try {
-        const res = await fetch('/api/press', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
-        });
-        if (res.ok) loadLeaderboard();
-        else if (res.status === 401) count.textContent = 'Sign in to press!';
-      } catch {}
-    }
-
-    document.getElementById('press-btn').addEventListener('click', press);
-    document.getElementById('leaderboard-press').addEventListener('click', press);
-    document.getElementById('leaderboard-retry').addEventListener('click', () => {
-      show('loading');
-      loadLeaderboard();
-    });
-
-    loadLeaderboard();
+    document.getElementById('chores-retry').addEventListener('click', loadChores);
+    loadChores();
   </script>
 </body>
 </html>

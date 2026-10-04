@@ -1,3 +1,14 @@
 {
-  "secrets": []
+  "secrets": [],
+  "tests": [
+    {
+      "id": "chores.default",
+      "name": "Chores screen renders",
+      "path": "/",
+      "expectSelector": "#chores-list .card",
+      "expectText": "rotates every Monday",
+      "visual": true,
+      "impact": ["public/index.html", "server.js"]
+    }
+  ]
 }
