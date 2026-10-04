@@ -91,12 +91,27 @@ tables you've marked private), etc.
 
 ## About Flat 4B Chores
 
-A weekly chore rotation for one flat: each chore (bins, dishes, hoovering)
-belongs to one person each week, everyone's turn moves on every Monday, and
-anyone in the flat can tick a chore off for the week. The chores, people and
-due days in `server.js`'s seed are the flat's real starting data; the
-rotation is computed from the calendar week against `ROTATION_ANCHOR`, so
-nothing needs updating by hand.
+A weekly chore rota for one flat. The screen shows whose turn it is for
+three shared chores — bins, dishes and hoovering — and anyone in the flat
+ticks a chore off for the week ("mark as done"; tapping again undoes).
+
+- **Members join on first open.** A signed-in `GET /api/state` upserts the
+  viewer into `members`, so the names on the rota are always real
+  flatmates. Guests read but are never added, and every write needs an
+  account.
+- **Weeks roll over at midnight UTC on Monday.** `turns.week_start` is the
+  Monday's date ('YYYY-MM-DD', computed in UTC); every Monday each chore
+  moves to the next person, ticked off or not. Never compute the week from
+  the server's local timezone.
+- **Turn order** is `members ORDER BY joined_at, id` — first to open the
+  app is first in the cycle. A week's turns are materialized once (missing
+  `turns` rows inserted on first read), so someone joining mid-week cannot
+  shift the current week; they enter the cycle next Monday.
+- **`turns` rows are never deleted** — old weeks are the rota's history. A
+  tick is the `done_*` columns on the current week's row, so it belongs to
+  a chore-and-week and survives reloads.
+- **The three chores are fixed** in this version (seeded once whenever the
+  `chores` table is empty): no adding, renaming or deleting.
 
 ## Design
 
@@ -108,9 +123,21 @@ change follows it, and updates it when a request changes the look on purpose.
   The first version keeps them; list any change under Assumptions.
 
 - **Palette:** accent: sage green, from the sketch (already set in the kit's tokens); neutrals: the kit's warm greys
-- **Signature element:** the weekly rotation cycle—which person owns which chore right now
+- **Signature element:** the rotation itself — each chore card shows not only
+  who has it this week (the accent turn line) but who takes it next
+  ("next: …"), so the weekly cycle is visible with no extra navigation. With
+  one member, the "next" line is hidden.
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`
   _(change their sizes in `tailwind.config.js` if you must, not their number)_
+- **Words:** the sketch's words are kept — "mark as done", "rotates every
+  Monday", "week of Monday …", turn line "{name}'s turn", due lines "due
+  Friday/Thursday/Saturday". Two words were added: "next: {name}" (the
+  signature element) and "undo" (the button once ticked). "done" is the
+  ticked badge.
+- **Both looks:** light and dark, following the viewer's Homeroom theme via
+  the kept theme `<script>`; no theme picker and no fixed look — this is a
+  utility screen, not a scene. The favicon's circle carries the light sage
+  accent.
 
 The kit is in `styles/tailwind-input.css`: colour tokens with a light and
 a dark value (named in `tailwind.config.js`), and a few components
@@ -132,6 +159,11 @@ Re-theme by changing the token values there, keeping every text pair at
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- `members`, `chores` and `turns` are public on purpose (member rows hold
+  only platform ids and public usernames); nothing here is
+  `staging:private`.
+- The boot seed gives staging three obviously fake members ("Staging demo
+  Maya/Jasper/Sophie", fixed fake ids 900001–900003); real viewers are
+  appended after them by the normal first-open path.
+- No new dependencies; keep the styling to the design kit's tokens and
+  components in `styles/tailwind-input.css`.
