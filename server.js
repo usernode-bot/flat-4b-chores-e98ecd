@@ -36,8 +36,11 @@ const GUEST_PUBLIC_KEY = (process.env.USERNODE_GUEST_JWT_PUBLIC_KEY || '')
 
 // Paths that stay open without authentication. Add a path here (and add it
 // with `app.get`/`app.post` below) if you deliberately want it public.
-// Everything else requires a valid platform-issued JWT.
-const PUBLIC_API_PATHS = new Set(['/health']);
+// Everything else requires a valid platform-issued JWT. /api/rotation is
+// here because visitors may look at everything, and the rotation carries
+// only usernames, which are public on Homeroom; the write routes stay
+// account-only.
+const PUBLIC_API_PATHS = new Set(['/health', '/api/rotation']);
 
 app.use(express.json());
 
@@ -64,6 +67,9 @@ app.use(express.json());
 // USERNODE_PLATFORM_ORIGIN there too if you want the hosted assets locally.
 const PLATFORM_ORIGIN = (process.env.USERNODE_PLATFORM_ORIGIN || '')
   .replace(/\/+$/, '');
+
+// Staging vs production. Only staging gets seed data.
+const IS_STAGING = process.env.USERNODE_ENV === 'staging';
 
 app.get(/^\/usernode-(?:bridge|native|tailwind)\//, async (req, res) => {
   try {

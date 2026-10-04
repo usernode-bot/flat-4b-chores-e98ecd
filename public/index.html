@@ -113,6 +113,11 @@
        kit in styles/tailwind-input.css; CLAUDE.md's "## Design" says how. -->
   <main class="mx-auto flex max-w-md flex-col gap-8 px-4 py-10">
 
+    <!-- The bin-night reminder, at the very top. Shown only from 5 pm on the
+         day before bins are due, and on the due day itself; computed from the
+         viewer's own clock, since the server cannot know their time zone. -->
+    <div id="bin-banner" class="card bg-accent text-on-accent text-body font-medium" hidden></div>
+
     <header class="px-4 py-6 bg-surface">
       <h1 class="text-title font-bold text-fg">Flat 4B Chores</h1>
       <p id="week-line" class="text-muted text-small"></p>
@@ -154,6 +159,7 @@
           </div>
           <div class="skeleton h-3 w-20"></div>
         </div>
+        <p class="text-small text-muted" id="bins-due"></p>
       </div>
       <div id="state-empty" class="state-empty" hidden>
         <p class="text-heading">Nobody in the rota yet</p>
@@ -184,6 +190,8 @@
       empty: document.getElementById('state-empty'),
       error: document.getElementById('state-error'),
     };
+    const banner = document.getElementById('bin-banner');
+
     function show(state) {
       for (const [name, el] of Object.entries(views)) el.hidden = name !== state;
     }
@@ -253,8 +261,37 @@
       return card;
     }
 
+    // Is the reminder showing right now, and is it tonight or tomorrow?
+    // The viewer's own clock decides: the server cannot know their zone.
+    // "The night before" starts at 5 pm on the day before bins are due.
+    function binNight(dueDay) {
+      const due = DAYS.indexOf(dueDay);
+      if (due === -1) return null;
+      const now = new Date();
+      if (now.getDay() === due) return 'tonight';
+      if ((now.getDay() + 1) % 7 === due && now.getHours() >= 17) return 'tomorrow';
+      return null;
+    }
+
+    // Banner text is set with textContent so a name can never become markup.
+    function renderBanner(chores) {
+      const bins = chores.find((c) => c.name === 'bins');
+      const night = bins && bins.turn ? binNight(bins.dueDay) : null;
+      if (!night) {
+        banner.hidden = true;
+        return;
+      }
+      banner.replaceChildren(
+        document.createTextNode('Bin night ' + night + ': it\u2019s '),
+        Object.assign(document.createElement('strong'), { textContent: bins.turn.username }),
+        document.createTextNode('\u2019s turn.')
+      );
+      banner.hidden = false;
+    }
+
     function applyState(data) {
       document.getElementById('week-line').textContent = formatWeek(data.weekStart);
+      renderBanner(data.chores);
       // Empty only when the load WORKED and found nobody in the rotation:
       // nobody means no turn rows, so every turn is blank.
       if (!data.chores.length || data.chores.every((c) => !c.turn)) {

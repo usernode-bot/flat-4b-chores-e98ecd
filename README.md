@@ -6,6 +6,10 @@ ticks a chore off with **mark as done** — tap again to undo.
 
 - **Whose turn** — each chore card shows who has it this week, the day
   it's due, and who takes it next week.
+- **Bin-night reminder** — a banner at the top of the screen from 5 pm
+  on the day before bins are due, and on bin day itself: "Bin night
+  tomorrow: it's Sam's turn." It shows when the app is opened, using the
+  viewer's own clock; there are no push notifications.
 - **Rotation** — every Monday at midnight UTC each chore moves to the
   next person in the flat, ticked off or not.
 - **Real names** — you join the rota the first time you open the app, so
