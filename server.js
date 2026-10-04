@@ -160,13 +160,22 @@ function weekNumber(weekIso) {
 
 // First open joins the rota: a member row per person, in the order they
 // first opened the app. Guests are never upserted — a write without an
-// account never gets here in the first place.
+// account never gets here in the first place. Returns the member row, so
+// callers can reference the rota's own member id (the turns table keys
+// done_by_id to members.id, not the platform account id).
 async function upsertMember(user) {
-  await pool.query(
+  const { rows } = await pool.query(
     `INSERT INTO members (user_id, username) VALUES ($1, $2)
-     ON CONFLICT (user_id) DO NOTHING`,
+     ON CONFLICT (user_id) DO NOTHING RETURNING id, username`,
     [user.id, user.username]
   );
+  if (rows.length) return rows[0];
+  // Another request inserted the row between us and the conflict: read it.
+  const { rows: existing } = await pool.query(
+    'SELECT id, username FROM members WHERE user_id = $1',
+    [user.id]
+  );
+  return existing[0];
 }
 
 // Materialize this week's turn rows once per week. The holder of the chore
@@ -251,7 +260,7 @@ app.post('/api/chores/:id/done', async (req, res) => {
     if (!Number.isInteger(choreId)) {
       return res.status(404).json({ error: 'not_found' });
     }
-    await upsertMember(req.user);
+    const member = await upsertMember(req.user);
     const weekIso = currentWeekIso();
     await ensureWeekTurns(weekIso);
     const { rowCount } = await pool.query(
@@ -260,7 +269,7 @@ app.post('/api/chores/:id/done', async (req, res) => {
          done_by_username = CASE WHEN done_by_username IS NULL THEN $4::varchar ELSE NULL END,
          done_at = CASE WHEN done_at IS NULL THEN NOW() ELSE NULL END
        WHERE chore_id = $1 AND week_start = $2`,
-      [choreId, weekIso, req.user.id, req.user.username]
+      [choreId, weekIso, member.id, member.username]
     );
     if (!rowCount) return res.status(404).json({ error: 'not_found' });
     res.json({ weekStart: weekIso, chores: await buildState(weekIso) });
