@@ -1,3 +1,14 @@
 {
-  "secrets": []
+  "secrets": [],
+  "tests": [
+    {
+      "id": "rotation.screen",
+      "name": "Rotation screen renders with turn and bin day",
+      "path": "/",
+      "expectSelector": ".card",
+      "expectText": "Bin day",
+      "visual": true,
+      "impact": ["public/**", "server.js", "styles/tailwind-input.css"]
+    }
+  ]
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
+
   <script>
   // usernode-dev-console@1
   (function () {
@@ -110,168 +110,252 @@
 <body class="min-h-screen bg-ground text-fg">
   <!-- Built from the design kit in styles/tailwind-input.css: colour tokens
        (bg-ground, text-muted, bg-accent, ...) that are right in both looks,
-       and components (btn-primary, list, card, state-empty, ...). The real
-       app keeps the kit; CLAUDE.md's "## Design" says how. -->
+       and components (btn-primary, list, card, state-empty, ...). -->
   <main class="mx-auto flex max-w-md flex-col gap-8 px-4 py-10">
 
-    <!-- usernode-starter-notice@1 — starter-template messaging. When building
-         the user's real app, replace this whole screen and delete this block,
-         both sentinel comments included. -->
-    <div class="flex flex-col items-start gap-2">
-      <p class="rounded-full bg-raised px-3 py-1 text-small font-medium text-muted">A sketch of Flat 4B Chores</p>
-      <p class="text-small text-muted">Homeroom sketched this from the app's description. Nothing on it works yet: to build it, ask Homeroom bot (tap the <strong class="font-semibold text-fg">Homeroom icon</strong>, then <strong class="font-semibold text-fg">Ask for a change</strong>).</p>
-    </div>
+    <!-- The bin-night reminder, at the very top. Shown only from 5 pm on the
+         day before bin day, and on bin day itself; computed from the
+         viewer's own clock, since the server cannot know their time zone. -->
+    <div id="bin-banner" class="card bg-accent text-on-accent text-body font-medium" hidden></div>
+
     <header class="px-4 py-6 bg-surface">
-  <h1 class="text-title font-bold text-fg">Flat 4B Chores</h1>
-  <p class="text-muted text-small">week of Monday 20 Jan</p>
-</header>
+      <h1 class="text-title font-bold text-fg">Flat 4B Chores</h1>
+      <p class="text-muted text-small" id="week-line">week of Monday …</p>
+    </header>
 
-<section class="px-4 py-6 flex flex-col gap-3">
-  <div class="card bg-raised border border-line rounded-lg p-4">
-    <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <h2 class="text-heading font-semibold text-fg">bins</h2>
-        <p class="text-body text-accent font-medium">Maya's turn</p>
-      </div>
-      <button class="btn-primary shrink-0">mark as done</button>
-    </div>
-    <p class="text-small text-muted">due Friday</p>
-  </div>
-
-  <div class="card bg-raised border border-line rounded-lg p-4">
-    <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <h2 class="text-heading font-semibold text-fg">dishes</h2>
-        <p class="text-body text-accent font-medium">Jasper's turn</p>
-      </div>
-      <button class="btn-secondary shrink-0">mark as done</button>
-    </div>
-    <p class="text-small text-muted">due Thursday</p>
-  </div>
-
-  <div class="card bg-raised border border-line rounded-lg p-4">
-    <div class="flex items-start justify-between mb-3">
-      <div class="min-w-0">
-        <h2 class="text-heading font-semibold text-fg">hoovering</h2>
-        <p class="text-body text-accent font-medium">Sophie's turn</p>
-      </div>
-      <button class="btn-secondary shrink-0">mark as done</button>
-    </div>
-    <p class="text-small text-muted">due Saturday</p>
-  </div>
-</section>
-
-<section class="px-4 py-4 border-t border-line">
-  <p class="text-small text-muted text-center">rotates every Monday</p>
-</section>
-    <!-- /usernode-starter-notice@1 -->
-
-    <section class="flex flex-col items-center gap-5" hidden>
-      <div class="w-full px-1">
-        <h2 class="text-heading">Try the example</h2>
-        <p class="text-small text-muted">This example will be replaced</p>
-      </div>
-
-      <button id="press-btn" class="btn-primary h-32 w-32 rounded-full text-title active:scale-95">Press!</button>
-
-      <p id="count" class="min-h-6 text-body text-muted"></p>
-
-      <div class="w-full">
-        <h3 class="section-label">Leaderboard</h3>
-        <!-- Anything that loads data shows exactly one of these at a time:
-             loading, the data, empty (it loaded, and there is nothing yet)
-             or error (it did not load). The script below switches them. -->
-        <div id="leaderboard-loading" role="status">
-          <span class="sr-only">Loading the leaderboard</span>
-          <div class="list">
-            <div class="list-row"><div class="skeleton h-4 w-1/2"></div></div>
-            <div class="list-row"><div class="skeleton h-4 w-1/3"></div></div>
-            <div class="list-row"><div class="skeleton h-4 w-2/5"></div></div>
-          </div>
+    <section class="px-4 py-6 flex flex-col gap-3">
+      <div class="card bg-raised border border-line rounded-lg p-4">
+        <div class="min-w-0 mb-3">
+          <h2 class="text-heading font-semibold text-fg">Bins</h2>
+          <p class="text-body text-accent font-medium" id="bins-turn"></p>
         </div>
-        <ol id="leaderboard" class="list" hidden></ol>
-        <div id="leaderboard-empty" class="state-empty" hidden>
-          <p class="text-heading">No presses yet</p>
-          <p class="text-body text-muted">Press the button to put your name on the board.</p>
-          <button id="leaderboard-press" class="btn-secondary">Press it</button>
-        </div>
-        <div id="leaderboard-error" class="state-error" hidden>
-          <svg class="h-6 w-6 text-danger" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
-          <p class="text-heading">Couldn't load the leaderboard</p>
-          <p class="text-body text-muted">Pressing still works, and every press is saved.</p>
-          <button id="leaderboard-retry" class="btn-secondary">Retry</button>
-        </div>
+        <p class="text-small text-muted" id="bins-due"></p>
       </div>
     </section>
 
-    <p class="text-center text-small text-muted" hidden>Built on Homeroom. This template screen disappears once you build your real app.</p>
+    <section class="px-4 py-4 flex flex-col gap-2">
+      <h2 class="section-label">Bin day</h2>
+      <select id="bin-day" class="field" disabled>
+        <option value="">not set</option>
+        <option value="0">Sunday</option>
+        <option value="1">Monday</option>
+        <option value="2">Tuesday</option>
+        <option value="3">Wednesday</option>
+        <option value="4">Thursday</option>
+        <option value="5">Friday</option>
+        <option value="6">Saturday</option>
+      </select>
+      <p class="text-small text-muted" id="bin-day-hint">Any member can set which day the bins go out.</p>
+    </section>
+
+    <section class="px-4 py-4 flex flex-col gap-2">
+      <h2 class="section-label">Rotation</h2>
+
+      <!-- The rotation's states, one shown at a time: loading, empty (only
+           when the load worked and found nobody), error (it did not load),
+           or the data. -->
+      <div id="rotation-loading" role="status">
+        <span class="sr-only">Loading the rotation</span>
+        <div class="list">
+          <div class="list-row"><div class="skeleton h-4 w-1/2"></div></div>
+          <div class="list-row"><div class="skeleton h-4 w-1/3"></div></div>
+          <div class="list-row"><div class="skeleton h-4 w-2/5"></div></div>
+        </div>
+      </div>
+
+      <div id="rotation-empty" class="state-empty" hidden>
+        <p class="text-heading">Nobody in the rotation yet</p>
+        <p class="text-body text-muted">Join to take the first bin turn.</p>
+        <button id="join-empty" class="btn-primary">Join the rotation</button>
+        <p id="join-empty-hint" class="text-body text-muted" hidden>Make an account to join.</p>
+      </div>
+
+      <div id="rotation-error" class="state-error" hidden>
+        <svg class="h-6 w-6 text-danger" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+        <p class="text-heading">Couldn't load the rotation</p>
+        <p class="text-body text-muted">The rest of the page still works. Try again.</p>
+        <button id="rotation-retry" class="btn-secondary">Retry</button>
+      </div>
+
+      <ul id="rotation" class="list" hidden></ul>
+
+      <div id="join-wrap" class="flex flex-col gap-2" hidden>
+        <button id="join" class="btn-primary">Join the rotation</button>
+        <p id="join-hint" class="text-body text-muted">Make an account to join.</p>
+      </div>
+    </section>
+
+    <section class="px-4 py-4 border-t border-line">
+      <p class="text-small text-muted text-center">rotates every Monday</p>
+    </section>
   </main>
 
   <script>
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token') || '';
     const headers = token ? { 'x-usernode-token': token } : {};
-    const count = document.getElementById('count');
 
-    // The leaderboard's states, one shown at a time. Empty only when the
-    // load worked and found nothing; a failure is the error state, never
-    // "No presses yet".
+    const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    const banner = document.getElementById('bin-banner');
+    const weekLine = document.getElementById('week-line');
+    const binsTurn = document.getElementById('bins-turn');
+    const binsDue = document.getElementById('bins-due');
+    const binDaySelect = document.getElementById('bin-day');
+    const binDayHint = document.getElementById('bin-day-hint');
+    const rotationList = document.getElementById('rotation');
     const views = {
-      loading: document.getElementById('leaderboard-loading'),
-      list: document.getElementById('leaderboard'),
-      empty: document.getElementById('leaderboard-empty'),
-      error: document.getElementById('leaderboard-error'),
+      loading: document.getElementById('rotation-loading'),
+      list: rotationList,
+      empty: document.getElementById('rotation-empty'),
+      error: document.getElementById('rotation-error'),
     };
+    const joinWrap = document.getElementById('join-wrap');
+
     function show(state) {
       for (const [name, el] of Object.entries(views)) el.hidden = name !== state;
     }
 
-    async function loadLeaderboard() {
-      let leaderboard;
-      try {
-        const res = await fetch('/api/leaderboard', { headers });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        ({ leaderboard } = await res.json());
-      } catch {
-        show('error');
-        return;
-      }
-      // People's names go in as text, never as HTML.
-      views.list.replaceChildren(...leaderboard.map((r, i) => {
-        const row = document.createElement('li');
-        row.className = 'list-row justify-between';
-        const name = document.createElement('span');
-        name.textContent = (i + 1) + '. ' + r.username;
-        const presses = document.createElement('span');
-        presses.className = 'tabular-nums text-muted';
-        presses.textContent = r.presses;
-        row.append(name, presses);
-        return row;
-      }));
-      const total = leaderboard.reduce((s, r) => s + parseInt(r.presses, 10), 0);
-      count.textContent = total + (total === 1 ? ' press so far' : ' presses so far');
-      show(leaderboard.length ? 'list' : 'empty');
+    // "week of Monday 20 Jan" for the viewer's current week, locally.
+    function weekLineText() {
+      const now = new Date();
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      return 'week of Monday ' + monday.getDate() + ' ' + MONTHS[monday.getMonth()];
     }
 
-    async function press() {
+    // Is the reminder showing right now, and is it tonight or tomorrow?
+    // The viewer's own clock decides: the server cannot know their zone.
+    // "The night before" starts at 5 pm on the day before bin day.
+    function binNight(binDay) {
+      if (binDay === null || binDay === undefined) return null;
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      if (now.getDay() === binDay) return 'tonight';
+      if (tomorrow.getDay() === binDay && now.getHours() >= 17) return 'tomorrow';
+      return null;
+    }
+
+    function render(data) {
+      weekLine.textContent = weekLineText();
+
+      // Banner: set with textContent so a name can never become markup.
+      const night = data.turnUsername ? binNight(data.binDay) : null;
+      if (night) {
+        banner.replaceChildren(
+          document.createTextNode('Bin night ' + night + ': it’s '),
+          Object.assign(document.createElement('strong'), { textContent: data.turnUsername }),
+          document.createTextNode('’s turn.')
+        );
+        banner.hidden = false;
+      } else {
+        banner.hidden = true;
+      }
+
+      binsTurn.textContent = data.turnUsername ? data.turnUsername + '’s turn' : '';
+      binsDue.textContent = data.binDay === null ? 'no bin day set yet' : 'due ' + WEEKDAYS[data.binDay];
+
+      binDaySelect.value = data.binDay === null ? '' : String(data.binDay);
+      if (data.viewerUsername) {
+        binDaySelect.disabled = false;
+        binDayHint.textContent = 'Changing it here applies to the whole flat straight away.';
+      } else {
+        binDaySelect.disabled = true;
+        binDayHint.textContent = 'Make an account to change bin day.';
+      }
+
+      if (!data.members.length) {
+        show('empty');
+        const guest = !data.viewerUsername;
+        document.getElementById('join-empty').hidden = guest;
+        document.getElementById('join-empty-hint').hidden = !guest;
+        joinWrap.hidden = true;
+        return;
+      }
+
+      rotationList.replaceChildren(...data.members.map((name, i) => {
+        const row = document.createElement('li');
+        row.className = 'list-row justify-between';
+        const label = document.createElement('span');
+        label.className = 'text-body text-fg';
+        label.textContent = name;
+        row.append(label);
+        if (i === data.turnIndex) {
+          const mark = document.createElement('span');
+          mark.className = 'rounded-full bg-raised px-3 py-1 text-small font-medium text-accent';
+          mark.textContent = 'this week';
+          row.append(mark);
+        }
+        return row;
+      }));
+      show('list');
+
+      // Joining is for signed-in people not already in the rotation; a
+      // guest sees the list plus a hint instead. Once joined, the screen
+      // has no button: setting bin day is the chooser.
+      const guest = !data.viewerUsername;
+      const canJoin = data.viewerUsername && !data.viewerIsMember;
+      joinWrap.hidden = !(guest || canJoin);
+      document.getElementById('join').hidden = !canJoin;
+      document.getElementById('join-hint').hidden = !guest;
+    }
+
+    async function loadRotation() {
+      show('loading');
       try {
-        const res = await fetch('/api/press', {
+        const res = await fetch('/api/rotation', { headers });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        render(await res.json());
+      } catch {
+        show('error');
+      }
+    }
+
+    async function join() {
+      const button = document.getElementById('join');
+      try {
+        button.disabled = true;
+        const res = await fetch('/api/join', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...headers },
         });
-        if (res.ok) loadLeaderboard();
-        else if (res.status === 401) count.textContent = 'Sign in to press!';
-      } catch {}
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        render(await res.json());
+      } catch {
+        // The rotation itself is still loaded; only the join failed. Say so
+        // next to the button without throwing away the loaded screen.
+        const hint = document.getElementById('join-hint');
+        hint.textContent = 'Couldn’t join just now. Try again.';
+        hint.hidden = false;
+      } finally {
+        button.disabled = false;
+      }
     }
 
-    document.getElementById('press-btn').addEventListener('click', press);
-    document.getElementById('leaderboard-press').addEventListener('click', press);
-    document.getElementById('leaderboard-retry').addEventListener('click', () => {
-      show('loading');
-      loadLeaderboard();
-    });
+    async function setBinDay() {
+      const weekday = parseInt(binDaySelect.value, 10);
+      if (Number.isNaN(weekday)) return;
+      try {
+        const res = await fetch('/api/bin-day', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ weekday }),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        render(await res.json());
+      } catch {
+        binDayHint.textContent = 'Couldn’t save bin day just now. Try again.';
+      }
+    }
 
-    loadLeaderboard();
+    document.getElementById('join').addEventListener('click', join);
+    document.getElementById('join-empty').addEventListener('click', join);
+    document.getElementById('rotation-retry').addEventListener('click', loadRotation);
+    binDaySelect.addEventListener('change', setBinDay);
+
+    loadRotation();
   </script>
 </body>
 </html>

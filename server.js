@@ -34,8 +34,11 @@ const GUEST_PUBLIC_KEY = (process.env.USERNODE_GUEST_JWT_PUBLIC_KEY || '')
 
 // Paths that stay open without authentication. Add a path here (and add it
 // with `app.get`/`app.post` below) if you deliberately want it public.
-// Everything else requires a valid platform-issued JWT.
-const PUBLIC_API_PATHS = new Set(['/health']);
+// Everything else requires a valid platform-issued JWT. /api/rotation is
+// here because visitors may look at everything, and the rotation carries
+// only usernames, which are public on Homeroom; the write routes stay
+// account-only.
+const PUBLIC_API_PATHS = new Set(['/health', '/api/rotation']);
 
 app.use(express.json());
 
@@ -62,6 +65,9 @@ app.use(express.json());
 // USERNODE_PLATFORM_ORIGIN there too if you want the hosted assets locally.
 const PLATFORM_ORIGIN = (process.env.USERNODE_PLATFORM_ORIGIN || '')
   .replace(/\/+$/, '');
+
+// Staging vs production. Only staging gets seed data.
+const IS_STAGING = process.env.USERNODE_ENV === 'staging';
 
 app.get(/^\/usernode-(?:bridge|native|tailwind)\//, async (req, res) => {
   try {
@@ -137,29 +143,72 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // fresh load.
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
-// Button press
-app.post('/api/press', async (req, res) => {
+// The rotation turns over every Monday, counted from this fixed Monday so
+// the turn depends on the calendar, not on when rows were added.
+const ROTATION_ANCHOR = Date.UTC(2026, 0, 5); // Monday 5 Jan 2026
+const DAY_MS = 86_400_000;
+
+// Whose turn it is, and who the viewer is. Guests may read, so nothing
+// here assumes req.user. All three routes answer with this same shape.
+async function rotationFor(user) {
+  const { rows } = await pool.query(`
+    SELECT user_id, username FROM household_members ORDER BY id
+  `);
+  const { rows: dayRows } = await pool.query(`
+    SELECT weekday FROM bin_day_setting ORDER BY id DESC LIMIT 1
+  `);
+  const members = rows.map(r => r.username);
+  const turnIndex = members.length
+    ? ((Math.floor((Date.now() - ROTATION_ANCHOR) / DAY_MS / 7) % members.length)
+       + members.length) % members.length
+    : null;
+  return {
+    members,
+    turnIndex,
+    turnUsername: turnIndex === null ? null : members[turnIndex],
+    binDay: dayRows.length ? dayRows[0].weekday : null,
+    viewerUsername: user ? user.username : null,
+    viewerIsMember: user ? rows.some(r => r.user_id === user.id) : false,
+  };
+}
+
+// Rotation and bin day (public to signed-in users and guests alike).
+app.get('/api/rotation', async (_req, res) => {
   try {
-    await pool.query(`
-      INSERT INTO presses (user_id, username) VALUES ($1, $2)
-    `, [req.user.id, req.user.username]);
-    res.json({ ok: true });
+    res.json(await rotationFor(_req.user));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Leaderboard
-app.get('/api/leaderboard', async (_req, res) => {
+// Join the rotation, at the end of the turn order. Idempotent: joining
+// twice changes nothing.
+app.post('/api/join', async (req, res) => {
   try {
-    const { rows } = await pool.query(`
-      SELECT username, COUNT(*) as presses
-      FROM presses
-      GROUP BY username
-      ORDER BY presses DESC
-      LIMIT 50
-    `);
-    res.json({ leaderboard: rows });
+    await pool.query(`
+      INSERT INTO household_members (user_id, username)
+      VALUES ($1, $2)
+      ON CONFLICT (user_id) DO NOTHING
+    `, [req.user.id, req.user.username]);
+    res.json(await rotationFor(req.user));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set (or change) bin day: one weekly weekday for the whole flat, 0 = Sunday
+// to match the browser's getDay(). Append-only, so the history is kept.
+app.post('/api/bin-day', async (req, res) => {
+  const weekday = req.body && req.body.weekday;
+  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+    return res.status(400).json({ error: 'weekday must be an integer from 0 (Sunday) to 6 (Saturday)' });
+  }
+  try {
+    await pool.query(`
+      INSERT INTO bin_day_setting (weekday, set_by_user_id, set_by_username)
+      VALUES ($1, $2, $3)
+    `, [weekday, req.user.id, req.user.username]);
+    res.json(await rotationFor(req.user));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -204,13 +253,39 @@ app.get('*', (req, res) => {
 
 async function start() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS presses (
+    CREATE TABLE IF NOT EXISTS household_members (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL UNIQUE,
       username VARCHAR(255) NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bin_day_setting (
+      id SERIAL PRIMARY KEY,
+      weekday SMALLINT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+      set_by_user_id INTEGER,
+      set_by_username VARCHAR(255),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // Staging only: obviously fake members and a bin day so the populated
+  // screen can be seen. Idempotent, fake identities only — the visitor is
+  // never seeded, so "has the viewer joined" stays testable by hand.
+  if (IS_STAGING) {
+    await pool.query(`
+      INSERT INTO household_members (user_id, username) VALUES
+        (900001, 'Staging demo Maya'),
+        (900002, 'Staging demo Jasper'),
+        (900003, 'Staging demo Sophie')
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+    await pool.query(`
+      INSERT INTO bin_day_setting (weekday, set_by_username)
+      SELECT 4, 'Staging demo Maya'
+      WHERE NOT EXISTS (SELECT 1 FROM bin_day_setting)
+    `);
+  }
   const server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
