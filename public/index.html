@@ -174,8 +174,7 @@
   </main>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || '';
+    const token = new URLSearchParams(window.location.search).get('token') || '';
     const headers = token ? { 'x-usernode-token': token } : {};
 
     const views = {
