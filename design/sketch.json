@@ -1,0 +1,36 @@
+{
+  "note": "The sketch this app's creator was shown when they made it (design/sketch.html). The first version keeps its layout, its words and its accent; any deviation is listed under Assumptions with the reason.",
+  "job": "see whose turn it is for each chore this week and mark chores done",
+  "words": {
+    "done": "mark as done",
+    "week": "week",
+    "chore": "chore",
+    "person": "person"
+  },
+  "accent": {
+    "dark": "#a8c98a",
+    "light": "#84a574"
+  },
+  "layout": [
+    "header: 'Flat 4B Chores' and 'week of Monday 20 Jan'",
+    "three chore cards, one per chore, showing whose turn, due date, tick button",
+    "small note at bottom: 'rotates every Monday'"
+  ],
+  "signature": "the weekly rotation cycle—which person owns which chore right now",
+  "accentName": "sage green",
+  "primaryAction": "mark as done",
+  "tokens": {
+    "light": {
+      "accent": "95 118 83",
+      "on-accent": "255 255 255",
+      "focus": "95 118 83"
+    },
+    "dark": {
+      "accent": "168 201 138",
+      "on-accent": "28 25 23",
+      "focus": "168 201 138"
+    }
+  },
+  "model": "claude-haiku-4-5",
+  "createdAt": "2026-10-04T21:02:12.751Z"
+}
