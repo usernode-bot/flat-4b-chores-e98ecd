@@ -1,41 +1,32 @@
 # Flat 4B Chores
 
-A tiny chore app for flat 4B, built on Homeroom. Right now it tracks one
-job, the bins, and reminds whoever's turn it is the night before bin day.
+A weekly chore rota for one flat. The screen shows whose turn it is for
+**bins**, **dishes** and **hoovering** this week, and anyone in the flat
+ticks a chore off with **mark as done** — tap again to undo.
 
-## What it does
-
-- **Bins card** — shows whose turn it is this week and which day the
-  bins go out ("due Thursday").
+- **Whose turn** — each chore card shows who has it this week, the day
+  it's due, and who takes it next week.
 - **Bin-night reminder** — a banner at the top of the screen from 5 pm
-  on the day before bin day, and on bin day itself: "Bin night tomorrow:
-  it's Sam's turn." It is shown when the app is opened; the platform has
-  no push notifications, so nobody is alerted who doesn't open the app.
-- **Rotation** — everyone who has joined, in turn order, with the
-  current person marked "this week". The turn advances every Monday.
-- **Join the rotation** — any signed-in Homeroom user can join, at the
-  end of the turn order.
-- **Bin day** — any signed-in member can set or change the weekly bin
-  day; guests can look at everything but can't join or change it.
-
-## How it works
-
-- **Sign-in** — the server verifies the platform-issued user token (an
-  RS256 JWT) on every request, so the app always knows who is using it.
-  Guests carry their own read-only token.
-- **Database** — the app has its own Postgres. Two append-only tables:
-  `household_members` (turn order = insertion order, rows never updated
-  or deleted) and `bin_day_setting` (the latest row is the current bin
-  day; the history is kept).
-- **API** — `GET /api/rotation` (also works for guests), `POST /api/join`
-  and `POST /api/bin-day` (signed-in only).
-- **Styling** — Tailwind CSS, precompiled by `npm run build` during
-  image creation, in a light and a dark look that follow the viewer's
-  Homeroom theme. The design kit lives in `styles/tailwind-input.css`.
+  on the day before bins are due, and on bin day itself: "Bin night
+  tomorrow: it's Sam's turn." It shows when the app is opened, using the
+  viewer's own clock; there are no push notifications.
+- **Rotation** — every Monday at midnight UTC each chore moves to the
+  next person in the flat, ticked off or not.
+- **Real names** — you join the rota the first time you open the app, so
+  the names on it are always real flatmates. People without a Homeroom
+  account can look at the rota, but ticking asks them to make an account
+  first.
+- **Under the hood** — the platform's auth (no accounts to build), the
+  app's own Postgres database (`members`, `chores` and `turns` tables),
+  two Express routes (`GET /api/state`,
+  `POST /api/chores/:id/done`), and Tailwind compiled at build time in a
+  light and a dark look that follow the viewer's Homeroom theme.
 
 ## Changing this app
 
-Ask Homeroom bot: open the app on Homeroom, tap the Homeroom icon in
-the header, then **Ask for a change**. You can also run Claude Code
-against this repo directly; start with `CLAUDE.md`, which carries the
-app-specific notes and points at the platform rules.
+Ask Homeroom bot: open the app on Homeroom, tap the Homeroom icon in the
+header, then **Ask for a change**, and describe what you want in plain
+English. You can also run Claude Code against this repo directly; start
+with `CLAUDE.md`, which carries the app-specific notes (the week
+boundary, how joining works, the design) and points at the platform
+rules.

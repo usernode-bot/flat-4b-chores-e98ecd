@@ -2,13 +2,13 @@
   "secrets": [],
   "tests": [
     {
-      "id": "rotation.screen",
-      "name": "Rotation screen renders with turn and bin day",
+      "id": "rota.week",
+      "name": "Rota renders with this week's turns",
       "path": "/",
-      "expectSelector": ".card",
-      "expectText": "Bin day",
+      "expectText": "mark as done",
+      "expectSelector": ".chore-card",
       "visual": true,
-      "impact": ["public/**", "server.js", "styles/tailwind-input.css"]
+      "impact": ["public/index.html", "server.js"]
     }
   ]
 }

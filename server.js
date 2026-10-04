@@ -7,6 +7,8 @@ const app = express();
 const port = process.env.PORT || 3000;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+const IS_STAGING = process.env.USERNODE_ENV === 'staging';
+
 // The platform signs user-identity tokens with an RSA private key it never
 // shares. Containers get only the PUBLIC half, so this app can verify who a
 // user is but cannot mint an identity — and neither can any other app.
@@ -134,7 +136,158 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// ── The rota ──────────────────────────────────────────────────────────────
+// The screen's one job: see whose turn it is for each chore this week and
+// mark chores done.
+
+// The week runs Monday to Monday in UTC, so the whole flat's rota turns
+// over at the same moment wherever a flatmate lives. `week_start` is the
+// Monday's date as 'YYYY-MM-DD' — a plain string, so a database session in
+// any timezone stores the same day.
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function currentWeekStart() {
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  // getUTCDay(): 0 = Sunday … 6 = Saturday. Shift to Monday-first.
+  const daysSinceMonday = (new Date(today).getUTCDay() + 6) % 7;
+  return new Date(today - daysSinceMonday * 24 * 60 * 60 * 1000);
+}
+
+function currentWeekIso() {
+  return currentWeekStart().toISOString().slice(0, 10);
+}
+
+// The rotation index: complete weeks since Monday 1970-01-05 (week 0), so
+// the count keeps ticking whatever the database's clock timezone is.
+function weekNumber(weekIso) {
+  return Math.floor(Date.parse(weekIso + 'T00:00:00Z') / WEEK_MS);
+}
+
+// First open joins the rota: a member row per person, in the order they
+// first opened the app. Guests are never upserted — a write without an
+// account never gets here in the first place. Returns the member row, so
+// callers can reference the rota's own member id (the turns table keys
+// done_by_id to members.id, not the platform account id).
+async function upsertMember(user) {
+  const { rows } = await pool.query(
+    `INSERT INTO members (user_id, username) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO NOTHING RETURNING id, username`,
+    [user.id, user.username]
+  );
+  if (rows.length) return rows[0];
+  // Another request inserted the row between us and the conflict: read it.
+  const { rows: existing } = await pool.query(
+    'SELECT id, username FROM members WHERE user_id = $1',
+    [user.id]
+  );
+  return existing[0];
+}
+
+// Materialize this week's turn rows once per week. The holder of the chore
+// with rotation offset `o` in week `w` is members[(w + o) % count]; the
+// member list is as of the first read of the week, so someone joining
+// mid-week cannot shift this week's turns — they enter the cycle next
+// Monday. ON CONFLICT DO NOTHING keeps concurrent first reads safe: both
+// then see the same row.
+async function ensureWeekTurns(weekIso) {
+  const { rows: members } = await pool.query(
+    'SELECT id FROM members ORDER BY joined_at, id'
+  );
+  if (!members.length) return;
+  const { rows: chores } = await pool.query(
+    'SELECT id, rotation_offset FROM chores ORDER BY position'
+  );
+  const week = weekNumber(weekIso);
+  for (const chore of chores) {
+    const holder = members[(week + chore.rotation_offset) % members.length];
+    await pool.query(
+      `INSERT INTO turns (chore_id, week_start, member_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (chore_id, week_start) DO NOTHING`,
+      [chore.id, weekIso, holder.id]
+    );
+  }
+}
+
+// The state the screen renders from. `next` is the signature element: each
+// chore shows not only who has it now but who takes it next, so the weekly
+// cycle is visible without navigation. With a single member there is no
+// next person and `next` is null.
+async function buildState(weekIso) {
+  const { rows: members } = await pool.query(
+    'SELECT id, username FROM members ORDER BY joined_at, id'
+  );
+  const { rows: chores } = await pool.query(
+    `SELECT c.id, c.name, c.due_day, t.member_id,
+            tu.username AS turn_username, t.done_by_id
+     FROM chores c
+     LEFT JOIN turns t ON t.chore_id = c.id AND t.week_start = $1
+     LEFT JOIN members tu ON tu.id = t.member_id
+     ORDER BY c.position`,
+    [weekIso]
+  );
+  return chores.map((c) => {
+    const idx = members.findIndex((m) => m.id === c.member_id);
+    const next = members.length > 1 && idx !== -1
+      ? members[(idx + 1) % members.length]
+      : null;
+    return {
+      id: c.id,
+      name: c.name,
+      dueDay: c.due_day,
+      turn: c.turn_username ? { username: c.turn_username } : null,
+      next: next ? { username: next.username } : null,
+      done: c.done_by_id !== null,
+    };
+  });
+}
+
+// A guest may read the rota (the middleware lets every GET through) but is
+// never added to `members` — the names on it are people with accounts.
+app.get('/api/state', async (req, res) => {
+  try {
+    if (req.user) await upsertMember(req.user);
+    const weekIso = currentWeekIso();
+    await ensureWeekTurns(weekIso);
+    res.json({ weekStart: weekIso, chores: await buildState(weekIso) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tick a chore off for this week — or undo the tick. The week is computed
+// HERE, never trusted from the client, so a stale client cannot tick an
+// old week. The tick lives on the turn row (done_by_*), so it belongs to a
+// chore-and-week, survives reloads and keeps last week's history intact.
+app.post('/api/chores/:id/done', async (req, res) => {
+  try {
+    const choreId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(choreId)) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    const member = await upsertMember(req.user);
+    const weekIso = currentWeekIso();
+    await ensureWeekTurns(weekIso);
+    const { rowCount } = await pool.query(
+      `UPDATE turns SET
+         done_by_id = CASE WHEN done_by_id IS NULL THEN $3::int ELSE NULL END,
+         done_by_username = CASE WHEN done_by_username IS NULL THEN $4::varchar ELSE NULL END,
+         done_at = CASE WHEN done_at IS NULL THEN NOW() ELSE NULL END
+       WHERE chore_id = $1 AND week_start = $2`,
+      [choreId, weekIso, member.id, member.username]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    res.json({ weekStart: weekIso, chores: await buildState(weekIso) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/health', (_req, res) => {
+  if (shuttingDown) return res.status(503).json({ status: 'shutting_down' });
+  res.json({ status: 'ok' });
+});
 
 // The template ships no favicon file; index.html carries an inline SVG
 // icon instead. Answer 204 here so anything that still probes
@@ -142,77 +295,6 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // the auth-gated catch-all and surface a 401 in the console on every
 // fresh load.
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
-
-// The rotation turns over every Monday, counted from this fixed Monday so
-// the turn depends on the calendar, not on when rows were added.
-const ROTATION_ANCHOR = Date.UTC(2026, 0, 5); // Monday 5 Jan 2026
-const DAY_MS = 86_400_000;
-
-// Whose turn it is, and who the viewer is. Guests may read, so nothing
-// here assumes req.user. All three routes answer with this same shape.
-async function rotationFor(user) {
-  const { rows } = await pool.query(`
-    SELECT user_id, username FROM household_members ORDER BY id
-  `);
-  const { rows: dayRows } = await pool.query(`
-    SELECT weekday FROM bin_day_setting ORDER BY id DESC LIMIT 1
-  `);
-  const members = rows.map(r => r.username);
-  const turnIndex = members.length
-    ? ((Math.floor((Date.now() - ROTATION_ANCHOR) / DAY_MS / 7) % members.length)
-       + members.length) % members.length
-    : null;
-  return {
-    members,
-    turnIndex,
-    turnUsername: turnIndex === null ? null : members[turnIndex],
-    binDay: dayRows.length ? dayRows[0].weekday : null,
-    viewerUsername: user ? user.username : null,
-    viewerIsMember: user ? rows.some(r => r.user_id === user.id) : false,
-  };
-}
-
-// Rotation and bin day (public to signed-in users and guests alike).
-app.get('/api/rotation', async (_req, res) => {
-  try {
-    res.json(await rotationFor(_req.user));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Join the rotation, at the end of the turn order. Idempotent: joining
-// twice changes nothing.
-app.post('/api/join', async (req, res) => {
-  try {
-    await pool.query(`
-      INSERT INTO household_members (user_id, username)
-      VALUES ($1, $2)
-      ON CONFLICT (user_id) DO NOTHING
-    `, [req.user.id, req.user.username]);
-    res.json(await rotationFor(req.user));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Set (or change) bin day: one weekly weekday for the whole flat, 0 = Sunday
-// to match the browser's getDay(). Append-only, so the history is kept.
-app.post('/api/bin-day', async (req, res) => {
-  const weekday = req.body && req.body.weekday;
-  if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
-    return res.status(400).json({ error: 'weekday must be an integer from 0 (Sunday) to 6 (Saturday)' });
-  }
-  try {
-    await pool.query(`
-      INSERT INTO bin_day_setting (weekday, set_by_user_id, set_by_username)
-      VALUES ($1, $2, $3)
-    `, [weekday, req.user.id, req.user.username]);
-    res.json(await rotationFor(req.user));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -251,42 +333,103 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-async function start() {
+// ── Boot: migration and staging seed ─────────────────────────────────────
+async function migrate() {
+  // All three tables are public on purpose (the platform default): member
+  // rows hold only platform ids and public usernames, and chores and turns
+  // are rota content every flatmate already sees in the UI.
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS household_members (
+    CREATE TABLE IF NOT EXISTS members (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL UNIQUE,
       username VARCHAR(255) NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS bin_day_setting (
+    CREATE TABLE IF NOT EXISTS chores (
       id SERIAL PRIMARY KEY,
-      weekday SMALLINT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
-      set_by_user_id INTEGER,
-      set_by_username VARCHAR(255),
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      name VARCHAR(64) NOT NULL UNIQUE,
+      position INTEGER NOT NULL,
+      rotation_offset INTEGER NOT NULL,
+      due_day VARCHAR(16) NOT NULL
     )
   `);
-  // Staging only: obviously fake members and a bin day so the populated
-  // screen can be seen. Idempotent, fake identities only — the visitor is
-  // never seeded, so "has the viewer joined" stays testable by hand.
-  if (IS_STAGING) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS turns (
+      id SERIAL PRIMARY KEY,
+      chore_id INTEGER NOT NULL REFERENCES chores(id),
+      week_start DATE NOT NULL,
+      member_id INTEGER NOT NULL REFERENCES members(id),
+      done_by_id INTEGER REFERENCES members(id),
+      done_by_username VARCHAR(255),
+      done_at TIMESTAMPTZ,
+      UNIQUE (chore_id, week_start)
+    )
+  `);
+  // The starter's demo table goes with the starter screen.
+  await pool.query('DROP TABLE IF EXISTS presses');
+}
+
+async function seed() {
+  // The screen cannot render without the three chores; seed them in BOTH
+  // environments whenever the table is empty (a boot-time migration, never
+  // a per-request path).
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM chores');
+  if (rows[0].n === 0) {
     await pool.query(`
-      INSERT INTO household_members (user_id, username) VALUES
-        (900001, 'Staging demo Maya'),
-        (900002, 'Staging demo Jasper'),
-        (900003, 'Staging demo Sophie')
-      ON CONFLICT (user_id) DO NOTHING
-    `);
-    await pool.query(`
-      INSERT INTO bin_day_setting (weekday, set_by_username)
-      SELECT 4, 'Staging demo Maya'
-      WHERE NOT EXISTS (SELECT 1 FROM bin_day_setting)
+      INSERT INTO chores (name, position, rotation_offset, due_day) VALUES
+        ('bins', 0, 0, 'Friday'),
+        ('dishes', 1, 1, 'Thursday'),
+        ('hoovering', 2, 2, 'Saturday')
+      ON CONFLICT (name) DO NOTHING
     `);
   }
-  const server = app.listen(port, () => console.log(`Listening on :${port}`));
+  // Staging previews start from an empty copy of production, so a fresh
+  // one shows nobody in the rota. Seed three obviously fake members so the
+  // screen shows a populated rotation. Rows are never attributed to a real
+  // viewer: a real person opening a staging preview is appended after the
+  // demos by the normal first-open path above.
+  if (IS_STAGING) {
+    await pool.query(`
+      INSERT INTO members (user_id, username, joined_at) VALUES
+        (900001, 'Staging demo Maya',   NOW() - INTERVAL '9 days'),
+        (900002, 'Staging demo Jasper', NOW() - INTERVAL '8 days'),
+        (900003, 'Staging demo Sophie', NOW() - INTERVAL '7 days')
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+  }
+}
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────
+// The platform stops this app with SIGTERM: stop accepting connections,
+// drain in-flight ones, close the pool, exit. The drain is a literal
+// constant (not an env var) so a deployment can't talk itself out of it.
+const DRAIN_MS = 3000;
+let server = null;
+let shuttingDown = false;
+
+function shutdown(signal) {
+  if (shuttingDown || !server) return;
+  shuttingDown = true;
+  console.log(`${signal} received: closing the server, draining ${DRAIN_MS} ms`);
+  // /health answers 503 from now on, so a load balancer stops sending
+  // traffic while the drain runs.
+  server.close(() => {
+    pool.end().finally(() => process.exit(0));
+  });
+  const force = setTimeout(() => {
+    pool.end().finally(() => process.exit(0));
+  }, DRAIN_MS);
+  force.unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+async function start() {
+  await migrate();
+  await seed();
+  server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
 }
