@@ -1,3 +1,14 @@
 {
-  "secrets": []
+  "secrets": [],
+  "tests": [
+    {
+      "id": "rota.week",
+      "name": "Rota renders with this week's turns",
+      "path": "/",
+      "expectText": "mark as done",
+      "expectSelector": ".chore-card",
+      "visual": true,
+      "impact": ["public/index.html", "server.js"]
+    }
+  ]
 }
