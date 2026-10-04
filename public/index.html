@@ -118,6 +118,13 @@
       <p id="week-line" class="text-muted text-small"></p>
     </header>
 
+    <!-- Night-before bin reminder: a notice, not a button. The script
+         below shows it only on the eve of bins' due day (and hides it
+         once bins is ticked), so it starts hidden. The classes are whole
+         literals so the precompiled build picks them up; the accent and
+         on-accent tokens carry both looks, so no dark: variant. -->
+    <div id="bin-reminder" role="status" hidden class="rounded-xl bg-accent p-4 text-body font-medium text-on-accent"></div>
+
     <section aria-label="This week's chores" class="flex flex-col gap-3">
       <!-- Anything that loads data shows exactly one of these at a time:
            loading, the data, empty (it loaded, and there is nobody yet)
@@ -253,8 +260,31 @@
       return card;
     }
 
+    // The banner is a notice, not an action: no button, no close cross —
+    // it hides itself by rule (ticked, or not the night before), so there
+    // is nothing to dismiss. It names whoever has bins this week in the
+    // cards' own "{name}'s turn" wording; names go in as text, never HTML.
+    const binReminder = document.getElementById('bin-reminder');
+    function updateBinReminder(data) {
+      // Only the bins chore is ever checked; the eve day is derived from
+      // the chore's due day, so the rule stays honest if a due day moves.
+      const bins = data.chores.find((c) => c.name === 'bins');
+      const eve = bins ? DAYS[(DAYS.indexOf(bins.dueDay) + 6) % 7] : null;
+      // Today is worked out in UTC, matching the week logic in server.js
+      // (currentWeekStart), never the viewer's local timezone.
+      const today = DAYS[new Date().getUTCDay()];
+      const show = bins && bins.turn && !bins.done && today === eve;
+      binReminder.hidden = !show;
+      if (show) {
+        binReminder.textContent = 'Bins are due tomorrow: ' + bins.turn.username + "'s turn";
+      }
+    }
+
     function applyState(data) {
       document.getElementById('week-line').textContent = formatWeek(data.weekStart);
+      // Runs before the empty-state early return: with nobody in the rota
+      // there is no bins turn to name, so the banner stays hidden there.
+      updateBinReminder(data);
       // Empty only when the load WORKED and found nobody in the rotation:
       // nobody means no turn rows, so every turn is blank.
       if (!data.chores.length || data.chores.every((c) => !c.turn)) {
@@ -278,6 +308,10 @@
 
     async function loadState() {
       show('loading');
+      // The banner belongs to the loaded state only: hide it while a load
+      // is in flight or has failed; applyState shows it again if the rule
+      // still holds. First load starts hidden anyway.
+      binReminder.hidden = true;
       let data;
       try {
         const res = await fetch('/api/state', { headers });
